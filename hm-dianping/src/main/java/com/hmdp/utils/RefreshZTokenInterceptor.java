@@ -36,7 +36,7 @@ public class RefreshZTokenInterceptor implements HandlerInterceptor{
             return true;   //放行
         }
         //2、从Redis中取出用户信息
-        Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(RedisConstants.LOGIN_USER_KEY + token);
+        Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(RedisConstants.LOGIN_TOKEN_KEY + token);
 
         //3、判断用户是否存在
         if(userMap.isEmpty()){
@@ -49,7 +49,9 @@ public class RefreshZTokenInterceptor implements HandlerInterceptor{
         UserHolder.saveUser(user);
 
         //5、刷新token过期时间
-        stringRedisTemplate.expire(RedisConstants.LOGIN_USER_KEY + token, RedisConstants.LOGIN_USER_TTL, TimeUnit.MINUTES);
+        // GPT说这里可以改成当过期时间小于5分钟时再更新，避免每次请求都刷新，我持怀疑态度
+        // 因为如果用户在token过期前的第六分钟访问了，此时不会刷新，那6分钟后登录态过期，用户体验也不好
+        stringRedisTemplate.expire(RedisConstants.LOGIN_TOKEN_KEY + token, RedisConstants.LOGIN_USER_TTL, TimeUnit.MINUTES);
 
         //6、放行
         return true;    //放行

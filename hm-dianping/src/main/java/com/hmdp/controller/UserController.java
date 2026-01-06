@@ -59,11 +59,22 @@ public class UserController {
      * 登出功能
      * @return 无
      */
-    @PostMapping("/logout")
-    public Result logout(){
-        UserHolder.removeUser();
-        return Result.ok("成功退出登录");
-    }
+//    @PostMapping("/logout")
+//    public Result logout(){
+//        UserHolder.removeUser();
+//        return Result.ok("成功退出登录");
+//    }
+
+//    /**
+//     * 后台强制踢人功能（实现封号等操作）需要管理员权限（鉴权操作），这里先不做了
+//     * @param userId 要踢的用户id
+//     * @return 无
+//     */
+//    @PostMapping("/logout/{userId}")
+//    public Result kickUser(@PathVariable Long userId){
+//        // 实现踢人功能
+//        return userService.kickUser(userId);
+//    }
 
     @GetMapping("/me")
     public Result me(){

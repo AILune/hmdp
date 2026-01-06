@@ -1,14 +1,21 @@
 package com.hmdp.utils;
 
 public class RedisConstants {
+    //登录验证码key
     public static final String LOGIN_CODE_KEY = "login:code:";
+    //登录验证码有效期
     public static final Long LOGIN_CODE_TTL = 2L;
-    public static final String LOGIN_USER_KEY = "login:token:";
+    //登录用户Token key
+    public static final String LOGIN_TOKEN_KEY = "login:token:";
+    //登录用户有效期
     public static final Long LOGIN_USER_TTL = 3600L;
-
+    //登录用户ID key
+    public static final String LOGIN_USER_KEY = "login:user:";
+    //缓存空值有效期
     public static final Long CACHE_NULL_TTL = 2L;
-
+    //缓存店铺有效期
     public static final Long CACHE_SHOP_TTL = 30L;
+    //缓存店铺key
     public static final String CACHE_SHOP_KEY = "cache:shop:";
 
     public static final String LOCK_SHOP_KEY = "lock:shop:";
@@ -19,7 +26,7 @@ public class RedisConstants {
     public static final String FEED_KEY = "feed:";
     public static final String SHOP_GEO_KEY = "shop:geo:";
     public static final String USER_SIGN_KEY = "sign:";
-    public static final String LOGIN_TOKEN_KEY = "login:user:token:";
+    public static final String LOGIN_USER_TOKEN_KEY = "login:user:token:";
 
     public static final Long BLACK_LIST_TTL = 1L;
 

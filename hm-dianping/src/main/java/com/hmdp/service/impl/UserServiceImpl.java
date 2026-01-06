@@ -31,6 +31,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.utils.SystemConstants.USER_NICK_NAME_PREFIX;
@@ -162,50 +163,105 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         return Result.ok();
     }
 
-    //使用Redis实现
+    /**
+     * 用户登录（手机号 + 验证码）
+     *
+     * 登录流程：
+     * 1. 校验手机号格式
+     * 2. 校验验证码（Redis）
+     * 3. 查询用户是否存在，不存在则自动注册
+     * 4. 生成登录 Token
+     * 5. 登录态写入 Redis（支持单端登录）
+     *
+     * @param loginForm 登录表单（手机号 + 验证码）
+     * @param session HttpSession（当前未使用，可用于扩展）
+     * @return 登录结果（返回 Token）
+     */
     @Override
     public Result login(LoginFormDTO loginForm, HttpSession session) {
-        //校验手机号，如果不符合规范，则返回错误信息
+
+        /* ==================== 1. 校验手机号 ==================== */
         String phone = loginForm.getPhone();
-        if(RegexUtils.isPhoneInvalid(phone)){
+        if (RegexUtils.isPhoneInvalid(phone)) {
             return Result.fail("手机号格式错误！");
         }
 
-        //校验验证码，如果验证码不正确，则返回错误信息
-        String code = loginForm.getCode();
-        //从Redis中取出保存的验证码
-        String cacheCode = stringRedisTemplate.opsForValue().get(RedisConstants.LOGIN_CODE_KEY + phone).toString();
-        //校验验证码是否一致
-        if(!cacheCode.equals(code) || cacheCode == null){
+        /* ==================== 2. 校验验证码 ==================== */
+        String inputCode = loginForm.getCode();
+
+        // Redis 中验证码的 Key
+        String codeKey = RedisConstants.LOGIN_CODE_KEY + phone;
+
+        // 从 Redis 获取验证码
+        String cacheCode = stringRedisTemplate.opsForValue().get(codeKey);
+
+        // 验证码不存在或不一致
+        if (cacheCode == null || !cacheCode.equals(inputCode)) {
             return Result.fail("验证码错误！");
         }
 
-        //根据手机号从数据库查找用户信息   select * from user where phone = ?
+        /* ==================== 3. 查询用户信息 ==================== */
+        // 根据手机号查询用户
         User user = query().eq("phone", phone).one();
 
-        //如果不存在用户信息，则执行注册，将用户信息保存到数据库，并将用户信息保存在Redis中
-        if(user == null){
-            //注册用户
+        /* ==================== 4. 用户不存在则注册 ==================== */
+        if (user == null) {
             user = createUserWithPhone(phone);
         }
 
+        // 将 User 转为 UserDTO（只保留安全字段）
         UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
 
-        //如果存在用户信息，则直接把用户信息保存到Redis中，这里将用户转成HashMap后再存入
-//        Map<String, Object> mapUser = BeanUtil.beanToMap(userDTO);
-        Map<String, Object> mapUser = new HashMap<>();
-        mapUser.put("id", userDTO.getId().toString());
-        mapUser.put("nickName", userDTO.getNickName());
-        mapUser.put("icon", userDTO.getIcon());
-
+        /* ==================== 5. 生成 Token ==================== */
+        // 生成随机 Token（UUID 去掉中横线）
         String token = UUID.randomUUID().toString(true);
 
-        stringRedisTemplate.opsForHash().putAll(RedisConstants.LOGIN_USER_KEY + token, mapUser);
-        //设置有效期
-        stringRedisTemplate.expire(RedisConstants.LOGIN_USER_KEY + token, RedisConstants.LOGIN_USER_TTL, TimeUnit.SECONDS);
+        Long userId = userDTO.getId();
 
-        //返回ok
-        return Result.ok(token);    //这里将token进行返回，方便后续通过token查找Redis中的用户
+        // Token 维度的 Key：token -> 用户信息
+        String tokenKey = RedisConstants.LOGIN_TOKEN_KEY + token;
+
+        // 用户维度的 Key：userId -> token 集合（用于单/多端登录控制）
+        String userKey = RedisConstants.LOGIN_USER_KEY + userId;
+
+        /* ==================== 6. 构造 Redis 用户数据 ==================== */
+        Map<String, Object> userMap = new HashMap<>();
+        userMap.put("id", userDTO.getId().toString());
+        userMap.put("nickName", userDTO.getNickName());
+        userMap.put("icon", userDTO.getIcon());
+
+        /* ==================== 7. 单端登录控制（踢人） ==================== */
+        // 单端登录：获取当前用户userKey下的所有token，然后删除Redis中与该token相关的所有tokenKey，实现踢人功能
+        // 获取该用户已登录的所有 Token
+        Set<String> oldTokens = stringRedisTemplate.opsForSet().members(userKey);
+
+        if (oldTokens != null && !oldTokens.isEmpty()) {
+            // 删除旧 Token 对应的登录态
+            for (String oldToken : oldTokens) {
+                stringRedisTemplate.delete(RedisConstants.LOGIN_TOKEN_KEY + oldToken);
+            }
+            // 删除用户 Token 集合
+            stringRedisTemplate.delete(userKey);
+        }
+
+        /* ==================== 8. 写入新的登录态 ==================== */
+        //写入新的登录态，如果要实现多端登录则将上述单端登录的代码注释即可，这样就不会删除之前的登录信息，Set中存储了用户多端登录的token
+        // 保存 Token -> 用户信息
+        stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
+
+        // 保存 用户 -> Token（Set）
+        stringRedisTemplate.opsForSet().add(userKey, token);
+
+        // 设置 Token 过期时间
+        stringRedisTemplate.expire(
+                tokenKey,
+                RedisConstants.LOGIN_USER_TTL,
+                TimeUnit.SECONDS
+        );
+
+        /* ==================== 9. 返回登录结果 ==================== */
+        // 返回 Token，前端后续通过 Token 访问接口
+        return Result.ok(token);
     }
 
     private User createUserWithPhone(String phone) {
@@ -236,6 +292,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         stringRedisTemplate.opsForValue().setBit(key, dayOfMonth - 1, true);
         //返回ok
         return Result.ok();
+    }
+
+    @Override
+    public Result kickUser(Long userId) {
+        String userKey = RedisConstants.LOGIN_USER_KEY + userId;
+        Set<String> tokens = stringRedisTemplate.opsForSet().members(userKey);
+
+        if (tokens != null) {
+            for (String token : tokens) {
+                stringRedisTemplate.delete(RedisConstants.LOGIN_TOKEN_KEY + token);
+            }
+        }
+        stringRedisTemplate.delete(userKey);
+        return Result.ok("成功踢人");
     }
 
     //统计连续签到天数
