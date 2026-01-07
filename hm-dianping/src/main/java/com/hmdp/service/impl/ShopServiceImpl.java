@@ -74,7 +74,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 //        return Result.ok(shop);
 //    }
     @Override
-    public Result queryById(Long id) {
+    public Result queryById(Long id) throws InterruptedException {
 //        //解决缓存穿透
 //        Shop shop = queryWithPassThrough(id);
 //        //自定义工具类解决缓存穿透（使用缓存空对象方式）
@@ -282,7 +282,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      * @param id 商户 id
      * @return Shop
      */
-    public Shop queryWithLogicExpire(Long id) {
+    public Shop queryWithLogicExpire(Long id) throws InterruptedException {
 
         /* ===================== 1. 查询本地缓存 ===================== */
         // 先从 Caffeine 本地缓存中查询
@@ -295,24 +295,47 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         String key = RedisConstants.CACHE_SHOP_KEY + id;
         String shopJson = stringRedisTemplate.opsForValue().get(key);
 
-        // Redis 中不存在数据，直接返回
+        // 之前的做法是如果 Redis 中不存在数据，直接返回
+        // 存在的问题：如果Redis中不存在数据，而数据库中存在数据，表示没有做数据预热，在前端查询数据库中存在的店铺时也会报店铺不存在错误
+        // 因此Redis中不存在数据时需要去查询数据库，并处理由此可能带来的缓存穿透问题
+        /* ===================== 3. Redis 未命中：回源 DB ===================== */
         if (StrUtil.isBlank(shopJson)) {
+
+            // 3.1 查询数据库
+            Shop shop = getById(id);
+            if (shop == null) {
+                // 3.2 如果数据库未命中，则缓存空值，防止缓存穿透（短 TTL）
+                stringRedisTemplate.opsForValue().set(key, "", RedisConstants.CACHE_NULL_TTL, TimeUnit.MINUTES);
+                return null;
+            }
+
+            // 3.3 如果数据库命中，则写入 Redis，并设置逻辑过期时间
+            saveShop2Redis(id, RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
+
+            // 3.4 写入本地缓存
+            shopLocalCache.put(id, shop);
+            return shop;
+        }
+
+        /* ===================== 4. Redis 命中但为空值 ===================== */
+        // 表示发生了缓存穿透，直接返回 null
+        if ("".equals(shopJson)) {
             return null;
         }
 
-        /* ===================== 3. 反序列化 Redis 数据 ===================== */
+        /* ===================== 5. 反序列化 Redis 数据 ===================== */
         // Redis 中存的是 RedisData（包含数据本身 + 逻辑过期时间）
         RedisData redisData = JSONUtil.toBean(shopJson, RedisData.class);
         Shop shop = JSONUtil.toBean((JSONObject) redisData.getData(), Shop.class);
 
-        /* ===================== 4. 判断逻辑是否过期 ===================== */
+        /* ===================== 6. 判断逻辑是否过期 ===================== */
         // 逻辑未过期：直接返回数据，并写入本地缓存
         if (redisData.getExpireTime().isAfter(LocalDateTime.now())) {
             shopLocalCache.put(id, shop);
             return shop;
         }
 
-        /* ===================== 5. 逻辑已过期，尝试重建缓存 ===================== */
+        /* ===================== 7. 逻辑已过期，尝试异步重建缓存 ===================== */
         String lockKey = RedisConstants.LOCK_SHOP_KEY + id;
         boolean isLock = tryLock(lockKey);
 
@@ -333,7 +356,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             });
         }
 
-        /* ===================== 6. 返回旧数据 ===================== */
+        /* ===================== 8. 返回旧数据 ===================== */
         // 无论是否获取到锁，都直接返回旧数据，保证接口可用性
         // 同时将旧数据写入本地缓存（重建完成后会被主动清除）
         shopLocalCache.put(id, shop);
