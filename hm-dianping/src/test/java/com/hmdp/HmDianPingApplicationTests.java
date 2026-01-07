@@ -1,5 +1,6 @@
 package com.hmdp;
 
+import com.github.benmanes.caffeine.cache.Cache;
 import com.hmdp.config.RedissonConfig;
 import com.hmdp.entity.Shop;
 import com.hmdp.service.impl.ShopServiceImpl;
@@ -40,6 +41,8 @@ class HmDianPingApplicationTests {
     private RedissonClient redissonClient;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+    @Autowired
+    private Cache<Long, Shop> shopLocalCache;
 
 
 //    @Test
@@ -50,7 +53,12 @@ class HmDianPingApplicationTests {
 
     @Test
     public void testSave() throws InterruptedException {
-        shopService.saveShop2Redis(1L, 10L);
+        shopService.saveShop2Redis(1L, 10L, TimeUnit.SECONDS);
+    }
+
+    @Test
+    public void testClearCache(){
+        shopLocalCache.invalidateAll();
     }
 //
 //    private ExecutorService es = Executors.newFixedThreadPool(500);
