@@ -47,6 +47,11 @@ class HmDianPingApplicationTests {
 //        Shop shop = shopService.getById(1L);
 //        cacheClient.setWithLogicExpire(RedisConstants.CACHE_SHOP_KEY + shop.getId(), shop, RedisConstants.CACHE_SHOP_TTL, TimeUnit.SECONDS);
 //    }
+
+    @Test
+    public void testSave() throws InterruptedException {
+        shopService.saveShop2Redis(1L, 10L);
+    }
 //
 //    private ExecutorService es = Executors.newFixedThreadPool(500);
 //
