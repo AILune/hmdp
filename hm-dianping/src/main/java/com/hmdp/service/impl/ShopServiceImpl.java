@@ -187,8 +187,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
-//    //使用逻辑过期方式解决缓存击穿（这里不用考虑缓存穿透了，因为Key不会过期，不会发现查询的数据在Redis中找不到的情况）
-//    //以下代码通过添加日志来验证多种情况下的多级缓存是否生效
+    //使用逻辑过期方式解决缓存击穿（这里不用考虑缓存穿透了，因为Key不会过期，不会发现查询的数据在Redis中找不到的情况）
+    //以下代码通过添加日志来验证多种情况下的多级缓存是否生效
 //    public Shop queryWithLogicExpire(Long id){
 //        log.info("【请求进入】queryWithLogicExpire id={}, thread={}",
 //                id, Thread.currentThread().getName());
@@ -235,7 +235,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 //        String lockKey = RedisConstants.LOCK_SHOP_KEY + id;
 //        boolean isLock = tryLock(lockKey);
 //        if(isLock){
-//            log.info("【获取锁成功，提交重建任务】id={}, lockKey={}, thread={}",
+//            log.info("【获取锁成功，提交重建任务，返回旧数据并写入本地缓存】id={}, lockKey={}, thread={}",
 //                    id, lockKey, Thread.currentThread().getName());
 //            //获取线程池
 //            CACHE_REBUILD_EXECUTOR.submit(() ->{
@@ -254,9 +254,10 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 //                            id, Thread.currentThread().getName());
 //                }
 //            });
+//        }else {
+//            log.info("【获取锁失败，返回旧数据并写入本地缓存】id={}, thread={}",
+//                    id, Thread.currentThread().getName());
 //        }
-//        log.info("【获取锁失败，返回旧数据并写入本地缓存】id={}, thread={}",
-//                id, Thread.currentThread().getName());
 //        //6、如果获取互斥锁失败，直接返回过期数据，获取互斥锁成功返回的过期数据也可以在这里进行
 //        //同时需要写入本地缓存，这一步会导致本地缓存过期之前无法读取重建的新数据，因此可以在重建完毕释放互斥锁时将本地缓存清除，主动删除旧数据
 //        shopLocalCache.put(id, shop);
