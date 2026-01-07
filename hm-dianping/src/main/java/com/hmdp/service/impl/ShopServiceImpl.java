@@ -188,7 +188,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
     //使用逻辑过期方式解决缓存击穿（这里不用考虑缓存穿透了，因为Key不会过期，不会发现查询的数据在Redis中找不到的情况）
-    //以下代码通过添加日志来验证多种情况下的多级缓存是否生效
+    //以下代码通过添加日志来验证多种情况下的多级缓存是否生效，可测试多种场景
 //    public Shop queryWithLogicExpire(Long id){
 //        log.info("【请求进入】queryWithLogicExpire id={}, thread={}",
 //                id, Thread.currentThread().getName());
