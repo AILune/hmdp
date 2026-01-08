@@ -22,17 +22,24 @@ import java.util.concurrent.TimeUnit;
  * @Version 1.0
  */
 //@Component
+/**
+ * 简单的Redis分布式锁，传入锁的名称和Redis模板
+ */
 public class SimpleRedisLock implements ILock {
     private final String name;
     private final StringRedisTemplate stringRedisTemplate;
+    //锁的Key前缀
     private static final String KEY_PRIFIX = "lock:";
+    //锁的Value前缀，线程ID拼接UUID防止多个JVM中相同的线程ID导致仍然出现误删
     private static final String LOCK_PRIFIX = UUID.randomUUID().toString(true) + "-";
 
+
+    //定义unlock的Lua脚本，DefaultRedisScript为RedisScirpt的实现类
     private static final DefaultRedisScript<Long> UNLOCK_SCRIPT;
-    static {    //代码块构造
-        UNLOCK_SCRIPT = new DefaultRedisScript<>();
-        UNLOCK_SCRIPT.setLocation(new ClassPathResource("unlock.lua"));
-        UNLOCK_SCRIPT.setResultType(Long.class);
+    static {    //静态代码块构造
+        UNLOCK_SCRIPT = new DefaultRedisScript<>();                     //初始化RedisScript对象
+        UNLOCK_SCRIPT.setLocation(new ClassPathResource("unlock.lua")); //指定脚本路径加载脚本
+        UNLOCK_SCRIPT.setResultType(Long.class);                        //设置脚本返回值类型
     }
 
     public SimpleRedisLock(String name, StringRedisTemplate stringRedisTemplate) {
@@ -50,12 +57,15 @@ public class SimpleRedisLock implements ILock {
 
     @Override
     public void unlock() {
+        //第一个参数为脚本对象，第二个参数为脚本的Key参数列表，第三个参数为脚本的Value参数列表
+        //ctrl+P来分析各参数的类型
         stringRedisTemplate.execute(
                 UNLOCK_SCRIPT,
                 Collections.singletonList(KEY_PRIFIX + name),
                 LOCK_PRIFIX + Thread.currentThread().getId());
     }
 
+    //每个锁的key都相同，如果释放锁这里查询和删除操作不满足原子性，则会出现多线程安全问题
 //    @Override
 //    public void unlock() {
 //        String threadId = LOCK_PRIFIX + Thread.currentThread().getId();

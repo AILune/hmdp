@@ -66,9 +66,9 @@ public class UserGenerate {
             );
             //System.out.println(map);
             //导入redis
-            stringRedisTemplate.opsForHash().putAll(RedisConstants.LOGIN_USER_KEY + token, map);
+            stringRedisTemplate.opsForHash().putAll(RedisConstants.LOGIN_TOKEN_KEY + token, map);
             //设置有效期，30分钟
-            stringRedisTemplate.expire(RedisConstants.LOGIN_USER_KEY + token, 30, TimeUnit.MINUTES);
+            stringRedisTemplate.expire(RedisConstants.LOGIN_TOKEN_KEY + token, 30, TimeUnit.MINUTES);
             //这一行代码是同时获取Map中的key和value，当然和这个批量登陆功能没关系
             //Set<Map.Entry<String, Object>> set = map.entrySet();
             try {

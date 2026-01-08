@@ -39,7 +39,7 @@ local voucherId = ARGV[1];
 -- 1.2 用户id
 local userId = ARGV[2];
 -- 1.3 订单id
-local orderId = ARGV[3];
+--local orderId = ARGV[3];
 
 -- 2.数据Key
 -- 2.1 秒杀券库存Key
@@ -50,16 +50,16 @@ local orderKey = 'seckill:order:' .. voucherId;
 -- 3.判断库存是否充足以及是否一人一单
 -- 3.1 判断库存是否充足
 if(tonumber(redis.call('get', stockKey)) <= 0) then
-    return 1;
+    return 1;   -- 返回1来表示库存不足
 end
 
 -- 3.2 判断是否一人一单
 if(redis.call('sismember', orderKey, userId) == 1) then
-    return 2;
+    return 2;   -- 返回2来表示用户已下单
 end
 
 -- 如果都满足则修改Redis中的数据，并将消息发送到消息队列中，然后返回0
 redis.call('incrby', stockKey, -1);
 redis.call('sadd', orderKey, userId);
-redis.call('xadd', 'stream.orders', '*', 'userId', userId, 'voucherId', voucherId, 'id', orderId)
+--redis.call('xadd', 'stream.orders', '*', 'userId', userId, 'voucherId', voucherId, 'id', orderId)
 return 0
