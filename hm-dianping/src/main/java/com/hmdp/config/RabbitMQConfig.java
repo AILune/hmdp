@@ -1,6 +1,9 @@
 package com.hmdp.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -14,6 +17,7 @@ import org.springframework.context.annotation.Configuration;
  * @Version 1.0
  */
 @Configuration
+@Slf4j
 public class RabbitMQConfig {
 
     public static final String SECKILL_EXCHANGE = "seckill.exchange";
@@ -22,7 +26,7 @@ public class RabbitMQConfig {
 
     @Bean
     public DirectExchange seckillExchange() {
-        return new DirectExchange(SECKILL_EXCHANGE);
+        return new DirectExchange(SECKILL_EXCHANGE, true, false);
     }
 
     @Bean
@@ -36,6 +40,28 @@ public class RabbitMQConfig {
                 .bind(seckillQueue())
                 .to(seckillExchange())
                 .with(SECKILL_ROUTING_KEY);
+    }
+
+    // ===== 新增：RabbitTemplate 行为配置 =====
+    @Bean
+    public RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory) {
+        RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
+
+        // Confirm：消息是否到达 Exchange
+        rabbitTemplate.setConfirmCallback((correlationData, ack, cause) -> {
+            if (!ack) {
+                log.error("【Confirm失败】correlationData={}, cause={}", correlationData, cause);
+            }
+        });
+
+        // Return：消息是否路由到 Queue
+        rabbitTemplate.setMandatory(true);
+        rabbitTemplate.setReturnCallback((message, replyCode, replyText, exchange, routingKey) -> {
+            log.error("【Return路由失败】exchange={}, routingKey={}, replyText={}",
+                    exchange, routingKey, replyText);
+        });
+
+        return rabbitTemplate;
     }
 }
 

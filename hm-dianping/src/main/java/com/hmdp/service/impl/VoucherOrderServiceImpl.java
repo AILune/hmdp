@@ -15,6 +15,7 @@ import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -75,11 +76,14 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         //秒杀成功，发送消息到 MQ
         Long voucherOrderId = redisIdWorker.nextId("order");
         SeckillOrderMessage message = new SeckillOrderMessage(voucherOrderId, userId, voucherId);
+        // 用订单号作为消息唯一标识
+        CorrelationData correlationData = new CorrelationData(voucherOrderId.toString());
 
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.SECKILL_EXCHANGE,
                 RabbitMQConfig.SECKILL_ROUTING_KEY,
-                message
+                message,
+                correlationData
         );
         //返回订单ID，异步下单
         return Result.ok(voucherOrderId);
