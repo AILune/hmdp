@@ -9,9 +9,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.converter.MessageConversionException;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 
 /**
  * ClassName: SeckillOrderConsumer
@@ -31,24 +34,36 @@ public class SeckillOrderConsumer {
 
     @RabbitListener(queues = RabbitMQConfig.SECKILL_QUEUE)
     public void handleSeckillOrder(SeckillOrderMessage message, Channel channel, Message mqMessage) throws IOException {
-        try {
-//            if (true) { throw new RuntimeException("测试异常"); } //新增异常，测试发现：存在异常时会重复消费，Message不会消失（会重新入队）
-            VoucherOrder order = new VoucherOrder();
-            order.setId(message.getOrderId());
-            order.setUserId(message.getUserId());
-            order.setVoucherId(message.getVoucherId());
+        //业务幂等性判断   由于订单id通过全局唯一id生成，且为订单表的主键，因此可以在创建订单前查询是否存在该订单id，如果存在就不创建
+        //防止同一条消息重复消费导致的库存多扣减以及订单多创建问题
+        Long orderId = message.getOrderId();
+        //查询订单是否存在
+        VoucherOrder order = voucherOrderService.getById(orderId);
+        if(order!=null){
+            //订单存在，直接返回
+            return;
+        }
+        //订单不存在，创建订单
+        VoucherOrder newOrder = new VoucherOrder();
+        newOrder.setId(orderId);
+        newOrder.setUserId(message.getUserId());
+        newOrder.setVoucherId(message.getVoucherId());
 
-            voucherOrderService.createVoucherOrder(order);
+        // 这里直接调用方法即可，如果抛异常则会自动重试，直至重试耗尽，将消息发送到错误信息队列
+        voucherOrderService.createVoucherOrder(newOrder);
+        //如果在上面扣减库存、创建订单业务完成后且在自动ACK完成前出现如下情况：ACK未成功发送（如网络中断）、抛出异常、消费者宕机、服务重启等，可能就会导致消息重新进入队列
+        //消息重新进入队列后会导致重复消费，如果没有做业务幂等性处理，就会重复上述创建订单流程，导致同一订单重复插入并多次扣减库存，因此最开头做了业务幂等性判断
 
-            // 订单正常创建则手动ACK
-            // channel.basicAck(deliveryTag, multiple)  deliveryTag为消息唯一标识  multiple为false表示只确认当前消息，不批量确认其他消息
-            channel.basicAck(mqMessage.getMessageProperties().getDeliveryTag(), false);
-        } catch (Exception e) {
-            log.error("处理秒杀订单异常", e);
-            // 消息处理异常时，手动NACK，通知RabbitMQ重新入队（类似 pending-list）
-            // channel.basicNack(deliveryTag, multiple, requeue)    requeue为true表示异常时将消息重新入队等待重试
-            channel.basicNack(mqMessage.getMessageProperties().getDeliveryTag(), false, true);
+        // 只留下下面两行代码，模拟异常情况，来测试消息最多重试三次就会投递到错误队列
+//        System.out.println("收到消息: " + message);
+//        throw new RuntimeException("测试异常");
         }
     }
-}
+
+//    //错误队列消费者
+//    @RabbitListener(queues = RabbitMQConfig.SECKILL_ERROR_QUEUE)
+//    public void handleErrorQueue(SeckillOrderMessage message) {
+//        System.out.println("错误队列收到消息: " + message);
+//    }
+
 

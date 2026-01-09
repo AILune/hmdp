@@ -77,13 +77,12 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long voucherOrderId = redisIdWorker.nextId("order");
         SeckillOrderMessage message = new SeckillOrderMessage(voucherOrderId, userId, voucherId);
         // 用订单号作为消息唯一标识
-        CorrelationData correlationData = new CorrelationData(voucherOrderId.toString());
+//        CorrelationData correlationData = new CorrelationData(voucherOrderId.toString());
 
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.SECKILL_EXCHANGE,
                 RabbitMQConfig.SECKILL_ROUTING_KEY,
-                message,
-                correlationData
+                message
         );
         //返回订单ID，异步下单
         return Result.ok(voucherOrderId);
@@ -99,5 +98,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
                 .update();
         //更新订单表
         save(voucherOrder);
+        //上面的先查订单再插入操作是从消息队列取出消息后才操作的，不会出现高并发情况下两个线程同时查询订单都为空的情况
+        //因为消息进入消息队列前已经通过一人一单和库存充足的逻辑了，也就是并发重复订单已经被拦在消息队列外面了，这里只可能是消息重复消费导致一条订单多次调用创建订单函数
     }
 }
