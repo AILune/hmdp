@@ -31,6 +31,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -50,6 +51,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     private CacheClient cacheClient;
     @Autowired
     private Cache<Long, Shop> shopLocalCache;
+    @Autowired
+    private ThreadPoolExecutor cacheRebuildExecutor;
     //使用Redis添加商铺缓存
 //    @Override
 //    public Result queryById(Long id) {
@@ -339,21 +342,38 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         String lockKey = RedisConstants.LOCK_SHOP_KEY + id;
         boolean isLock = tryLock(lockKey);
 
-        // 获取锁成功：开启异步线程进行缓存重建
+        // 获取锁成功：先DOUBLE—CHECK，如果缓存还是过期，则开启异步线程进行缓存重建，避免重复重建
         if (isLock) {
-            CACHE_REBUILD_EXECUTOR.submit(() -> {
-                try {
-                    // 从数据库查询最新数据并写入 Redis（重新设置逻辑过期时间）
-                    this.saveShop2Redis(id, RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
-                }catch (Exception e){
-                    throw new RuntimeException(e);
-                } finally {
-                    // 重建完成后释放锁
-                    unlock(lockKey);
-                    // 主动清除本地缓存，防止旧数据在本地缓存中继续生效
-                    shopLocalCache.invalidate(id);
+            try {
+                // ============= DOUBLE CHECK：再次检查缓存是否已经被重建 =============
+                String doubleCheckJson = stringRedisTemplate.opsForValue().get(key);
+                if (StrUtil.isNotBlank(doubleCheckJson)) {
+                    RedisData doubleCheckData = JSONUtil.toBean(doubleCheckJson, RedisData.class);
+                    // 如果已经被其他线程重建且未过期，则无需重复重建
+                    if (doubleCheckData.getExpireTime().isAfter(LocalDateTime.now())) {
+                        log.info("【Double Check】缓存已被其他线程重建，无需重复重建");
+                        return JSONUtil.toBean((JSONObject) doubleCheckData.getData(), Shop.class);
+                    }
                 }
-            });
+                // ============= 缓存未重建，则开启线程池中的线程异步重建 =============
+    //            CACHE_REBUILD_EXECUTOR.submit(() -> {
+                cacheRebuildExecutor.submit(() -> {
+                    try {
+                        // 从数据库查询最新数据并写入 Redis（重新设置逻辑过期时间）
+                        this.saveShop2Redis(id, RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
+                    }catch (Exception e){
+                        throw new RuntimeException(e);
+                    } finally {
+                        // 重建完成后释放锁
+                        unlock(lockKey);
+                        // 主动清除本地缓存，防止旧数据在本地缓存中继续生效
+                        shopLocalCache.invalidate(id);
+                    }
+                });
+            } catch (Exception e) {
+                unlock(lockKey);
+                throw e;
+            }
         }
 
         /* ===================== 8. 返回旧数据 ===================== */
@@ -389,7 +409,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         //1、先更新数据库
         updateById(shop);
         //2、删除缓存
-        stringRedisTemplate.delete(RedisConstants.CACHE_SHOP_KEY + id);
+//        stringRedisTemplate.delete(RedisConstants.CACHE_SHOP_KEY + id);
         return Result.ok();
     }
 

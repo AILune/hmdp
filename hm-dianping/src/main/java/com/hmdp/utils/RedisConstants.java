@@ -38,4 +38,10 @@ public class RedisConstants {
 
     public static final String GET_BLACK_LIST_LOCK_CLIENT_IPADDR = "getBlackListLock:clientIpAddr";
 
+    // ============ 新增：本地缓存广播频道 ============
+    /**
+     * 本地缓存失效广播频道（Redis Pub/Sub，备用方案）
+     */
+    public static final String LOCAL_CACHE_INVALIDATE_CHANNEL = "cache:local:invalidate";
+
 }

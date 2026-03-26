@@ -34,8 +34,10 @@ public class SeckillOrderConsumer {
 
     @RabbitListener(queues = RabbitMQConfig.SECKILL_QUEUE)
     public void handleSeckillOrder(SeckillOrderMessage message, Channel channel, Message mqMessage) throws IOException {
+        log.info("【消费者】收到秒杀消息：orderId={}, thread={}", message.getOrderId(), Thread.currentThread().getName());
         //业务幂等性判断   由于订单id通过全局唯一id生成，且为订单表的主键，因此可以在创建订单前查询是否存在该订单id，如果存在就不创建
         //防止同一条消息重复消费导致的库存多扣减以及订单多创建问题
+        //双重幂等方案：此处业务层在创建前查询订单是否存在，同时结合数据库层设计订单id为订单表主键(order_id)，保证唯一，即使业务层漏判，数据库也会报DuplicateKey异常
         Long orderId = message.getOrderId();
         //查询订单是否存在
         VoucherOrder order = voucherOrderService.getById(orderId);

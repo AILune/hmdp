@@ -1,6 +1,8 @@
 package com.hmdp.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.hmdp.config.RabbitMQConfig;
 import com.hmdp.config.RedissonConfig;
 import com.hmdp.dto.Result;
@@ -13,6 +15,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
@@ -43,6 +46,7 @@ import java.util.concurrent.*;
  * @since 2021-12-22
  */
 @Service
+@Slf4j
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
     @Autowired
     private SeckillVoucherServiceImpl seckillVoucherService;
@@ -63,6 +67,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     @Override
+    @SentinelResource(value = "seckillVoucher", blockHandler = "seckillBlockHandler")
     public Result seckillVoucher(Long voucherId) {
         //通过Lua脚本判断是否库存充足和一人一单，并将优惠券信息写入消息队列
         Long userId = UserHolder.getUser().getId();
@@ -73,12 +78,13 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         if(r!=0){
             return Result.fail(r==1?"库存不足":"不允许重复下单");
         }
-        //秒杀成功，发送消息到 MQ
+        //秒杀成功，将订单id、优惠券id、用户id等信息发送到 MQ，然后返回订单id即可
         Long voucherOrderId = redisIdWorker.nextId("order");
         SeckillOrderMessage message = new SeckillOrderMessage(voucherOrderId, userId, voucherId);
         // 用订单号作为消息唯一标识
 //        CorrelationData correlationData = new CorrelationData(voucherOrderId.toString());
-
+        // 发送消息到MQ，异步下单，非阻塞
+        log.info("秒杀成功！【生产者】发送秒杀消息：orderId={}, thread={}", voucherOrderId, Thread.currentThread().getName());
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.SECKILL_EXCHANGE,
                 RabbitMQConfig.SECKILL_ROUTING_KEY,
@@ -87,6 +93,13 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         //返回订单ID，异步下单
         return Result.ok(voucherOrderId);
     }
+
+    public Result seckillBlockHandler(Long voucherId, BlockException ex) {
+        // 可以简单记录一下，或者直接返回
+         log.warn("秒杀限流：voucherId={}", voucherId);
+        return Result.fail("排队人数过多，请刷新重试");
+    }
+
     @Transactional  //涉及多表操作，需要事务管理
     public void createVoucherOrder(VoucherOrder voucherOrder){
         Long voucherId = voucherOrder.getVoucherId();

@@ -3,6 +3,8 @@ package com.hmdp.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.RandomUtil;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.dto.LoginFormDTO;
@@ -108,6 +110,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
     //使用Redis实现
     @Override
+    @SentinelResource(
+            value = "sendCode",              // 资源名（Dashboard 中配置用）
+            blockHandler = "sendCodeBlockHandler" // 限流回调方法
+    )
     public Result sendCode(String phone, HttpSession session, HttpServletRequest request) {
         //1.校验手机号
         if(RegexUtils.isPhoneInvalid(phone)){
@@ -115,12 +121,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
             return Result.fail("手机号格式错误！");
         }
 
-        //3.获取验证码锁
-        String getCodeLock = stringRedisTemplate.opsForValue().get(RedisConstants.GET_CODE_LOCK + phone);
-        if(getCodeLock != null){
-            //4.如果存在锁，则返回错误信息
-            return Result.fail("获取验证码过快，请稍后重试！");
-        }
+//        //3.获取验证码锁
+//        String getCodeLock = stringRedisTemplate.opsForValue().get(RedisConstants.GET_CODE_LOCK + phone);
+//        if(getCodeLock != null){
+//            //4.如果存在锁，则返回错误信息
+//            return Result.fail("获取验证码过快，请稍后重试！");
+//        }
 
         //5.获取IP地址
         String clientIpAddr = request.getRemoteAddr();
@@ -130,21 +136,21 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         //先让获取次数自增1
         Long phoneCount = stringRedisTemplate.opsForValue().increment(phoneKey);
         //仅第一次获取时设置过期时间为1小时
-        if (phoneCount == 1) {
-            stringRedisTemplate.expire(phoneKey, RedisConstants.BLACK_LIST_TTL, TimeUnit.HOURS);
-        }
         if (phoneCount > 15) {
             return Result.fail("获取验证码次数过多，您的手机号已被限制！");
+        }
+        if (phoneCount == 1) {
+            stringRedisTemplate.expire(phoneKey, RedisConstants.BLACK_LIST_TTL, TimeUnit.HOURS);
         }
 
         //7. ===== IP 限流（1 小时最多 20 次）=====
         String ipKey = RedisConstants.GET_BLACK_LIST_LOCK_CLIENT_IPADDR + clientIpAddr;
         Long ipCount = stringRedisTemplate.opsForValue().increment(ipKey);
+//        if (ipCount > 20) {
+//            return Result.fail("获取验证码次数过多，您的IP地址已被限制！");
+//        }
         if (ipCount == 1) {
             stringRedisTemplate.expire(ipKey, RedisConstants.BLACK_LIST_TTL, TimeUnit.HOURS);
-        }
-        if (ipCount > 20) {
-            return Result.fail("获取验证码次数过多，您的IP地址已被限制！");
         }
 
         //8.如果手机号和IP地址都未被限流，则生成验证码并设置验证码锁，防止短时间内重复获取验证码
@@ -161,6 +167,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
 
         //11.返回ok
         return Result.ok();
+    }
+
+    // ⚠️ 限流回调方法（必须与原方法参数一致 + 多一个 BlockException）
+    public Result sendCodeBlockHandler(String phone, HttpSession session, HttpServletRequest request, BlockException ex) {
+        // 记录日志，方便排查是哪个手机号触发了限流
+        log.warn("手机号限流：：phone={}", phone);
+
+        // 返回友好的提示信息
+        return Result.fail("操作太频繁，请稍后再试");
     }
 
     /**
@@ -213,7 +228,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
 
         /* ==================== 5. 生成 Token ==================== */
-        // 生成随机 Token（UUID 去掉中横线）
+        // 生成随机 Token 拼接 key（UUID 去掉中横线）
         String token = UUID.randomUUID().toString(true);
 
         Long userId = userDTO.getId();

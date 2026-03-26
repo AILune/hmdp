@@ -3,15 +3,15 @@ server:
 spring:
   application:
     name: hmdp
-  datasource:
+  datasource: # 配置数据源与MySQL连接信息
     driver-class-name: com.mysql.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC   #时区
     username: root
     password: 'yjx20020513'
   redis:
     host: 127.0.0.1
     port: 6379
-    password: '123456'
+#    password: '123456'
     lettuce:
       pool:
         max-active: 10
@@ -38,8 +38,46 @@ spring:
 #    publisher-returns: true
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
+  cloud:
+    sentinel:
+      transport:
+        dashboard: localhost:8082
+        port: 8719
+#      eager: false
+      datasource:
+        # 1. 热点参数限流规则 (针对手机号)
+        param-flow:
+          nacos:
+            server-addr: 127.0.0.1:8848
+#            username: nacos # 如果有密码
+#            password: nacos
+            data-id: ${spring.application.name}-param-flow-rules.json
+            group-id: DEFAULT_GROUP
+            rule-type: param-flow
+            data-type: json
+
+        # 2. 普通流控规则 (针对订单接口)
+        flow:
+          nacos:
+            server-addr: 127.0.0.1:8848
+#            username: nacos
+#            password: nacos
+            data-id: ${spring.application.name}-flow-rules.json
+            group-id: DEFAULT_GROUP
+            rule-type: flow
+            data-type: json
+
 mybatis-plus:
   type-aliases-package: com.hmdp.entity # 别名扫描包
 logging:
   level:
     com.hmdp: debug
+#  # 日志格式
+#  pattern:
+#    console: '%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
+
+canal:
+  server: 127.0.0.1:11111  # Canal Server 地址
+  destination: example     # 实例名（对应 conf/example）
+  username:
+  password:

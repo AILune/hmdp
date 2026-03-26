@@ -23,7 +23,7 @@ public class CaffeineCache {
     @Bean
     public Cache<Long, Shop> shopLocalCache(){
         return Caffeine.newBuilder()
-                .maximumSize(1000)
+                .maximumSize(1000)      // 最大条目数：防止内存溢出（核心！）
                 .expireAfterWrite(10, TimeUnit.MINUTES)
                 .build();
     }
