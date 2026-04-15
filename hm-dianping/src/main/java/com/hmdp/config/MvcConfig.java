@@ -25,6 +25,7 @@ public class MvcConfig implements WebMvcConfigurer {
     @Autowired
     private RefreshZTokenInterceptor refreshZTokenInterceptor;
     @Override
+    //双层拦截器的注册，先执行token刷新拦截器，再执行登录拦截器，order值越小优先级越高
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(loginInterceptor)
 //                .addPathPatterns("/**")

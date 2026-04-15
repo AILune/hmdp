@@ -111,8 +111,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
     //使用Redis实现
     @Override
     @SentinelResource(
-            value = "sendCode",              // 资源名（Dashboard 中配置用）
-            blockHandler = "sendCodeBlockHandler" // 限流回调方法
+            value = "sendCode",                     // 资源名（Dashboard 中配置用）
+            blockHandler = "sendCodeBlockHandler"   // 限流回调方法
     )
     public Result sendCode(String phone, HttpSession session, HttpServletRequest request) {
         //1.校验手机号
